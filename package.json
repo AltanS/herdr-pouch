@@ -1,0 +1,17 @@
+{
+  "name": "herdr-pouch",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "description": "Herdr plugin: stash prompts for an agent and insert them with one click",
+  "type": "module",
+  "bin": { "herdr-pouch": "./bin/herdr-pouch" },
+  "scripts": {
+    "typecheck": "bun x tsc --noEmit",
+    "herdr-pouch": "bun src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.6.0"
+  }
+}

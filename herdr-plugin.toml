@@ -1,0 +1,177 @@
+id = "herdr.pouch"
+name = "Pouch"
+version = "0.1.0"
+min_herdr_version = "0.7.0"
+description = "Stash prompts for an agent ahead of time and insert them into its input with one click"
+platforms = ["linux", "macos"]
+
+# Pouch has no build step. It runs TypeScript directly through Bun, which
+# scripts/run.sh locates (PATH, then ~/.bun/bin/bun, then $POUCH_BUN).
+
+# --- panes -------------------------------------------------------------------
+# Both entrypoints need to know WHICH agent pane they belong to, and the manifest
+# has no way to express that. scripts/pouch-ctl.sh opens them with an explicit
+# --target-pane / --env POUCH_TARGET_PANE, so always attach through the actions
+# below rather than `herdr plugin pane open` by hand.
+
+[[panes]]
+id = "strip"
+title = "Pouch strip"
+description = "Three-row pouch indicator pinned under an agent pane"
+command = ["bash", "scripts/run.sh", "strip"]
+placement = "split"
+# No width/height here: Herdr only accepts a size for popup placement, and a
+# fresh split lands at 50/50. openStrip() shrinks the pane to STRIP_ROWS
+# afterwards with `pane resize`.
+
+[[panes]]
+id = "list"
+title = "Pouch"
+description = "Full pouch: browse, compose, edit and insert stashed messages"
+command = ["bash", "scripts/run.sh", "list"]
+placement = "popup"
+width = "70%"
+height = "70%"
+
+# --- actions -----------------------------------------------------------------
+
+[[actions]]
+id = "attach"
+title = "Pouch: pin strip under this pane"
+description = "Split a three-row pouch strip below the focused agent pane (optional; the border indicator needs no strip)"
+contexts = ["pane"]
+command = ["bash", "scripts/run.sh", "action", "attach"]
+
+[[actions]]
+id = "detach"
+title = "Pouch: unpin strip from this pane"
+contexts = ["pane"]
+command = ["bash", "scripts/run.sh", "action", "detach"]
+
+[[actions]]
+id = "open"
+title = "Pouch: open"
+description = "Open the full pouch for the focused pane in a popup"
+contexts = ["pane", "global"]
+command = ["bash", "scripts/run.sh", "action", "open"]
+
+[[actions]]
+id = "insert-top"
+title = "Pouch: insert top message"
+description = "Type the pouch's first message into the focused pane, without submitting"
+contexts = ["pane", "global"]
+command = ["bash", "scripts/run.sh", "action", "insert-top"]
+
+[[actions]]
+id = "insert-top-submit"
+title = "Pouch: insert top message and submit"
+description = "Type the pouch's first message into the focused pane and press enter"
+contexts = ["pane", "global"]
+command = ["bash", "scripts/run.sh", "action", "insert-top-submit"]
+
+[[actions]]
+id = "browse"
+title = "Pouch: browse all pouches"
+description = "Pick from every saved pouch, including ones whose agent pane has been closed"
+contexts = ["pane", "global"]
+command = ["bash", "scripts/run.sh", "action", "browse"]
+
+[[actions]]
+id = "compose"
+title = "Pouch: stash a new message"
+description = "Write a message for the focused pane in $EDITOR"
+contexts = ["pane", "global"]
+command = ["bash", "scripts/run.sh", "action", "compose"]
+
+[[actions]]
+id = "stash-selection"
+title = "Pouch: stash selected text"
+description = "Put the current terminal selection into the focused pane's pouch"
+contexts = ["selection"]
+command = ["bash", "scripts/run.sh", "action", "stash-selection"]
+
+[[actions]]
+id = "setup"
+title = "Pouch: finish setup"
+description = "Install the `herdr-pouch` CLI, add the default keybindings to config.toml, and reload"
+contexts = ["global"]
+command = ["bash", "scripts/run.sh", "action", "setup"]
+
+# The old name for the same action. Declared so an operator following an older
+# README gets the setup they asked for instead of "unknown action".
+[[actions]]
+id = "install-cli"
+title = "Pouch: install the `herdr-pouch` CLI (old name for setup)"
+description = "Same as Pouch: finish setup"
+contexts = ["global"]
+command = ["bash", "scripts/run.sh", "action", "install-cli"]
+
+# --- startup -----------------------------------------------------------------
+# Pane metadata does not survive a server restart, so repaint every indicator
+# once Herdr comes back up.
+
+[[startup]]
+command = ["bash", "scripts/run.sh", "cli", "sync"]
+
+# --- events ------------------------------------------------------------------
+# The manifest's event names are DOTTED (`pane.agent_detected`); the payload
+# Herdr hands back spells the same event in snake_case (`pane_agent_detected`).
+# Writing the payload spelling here is silently accepted and never fires — it
+# only shows up as an "unknown event" warning in `herdr plugin link` output.
+#
+# Subscribe to what changes which pouch a pane maps to, never to what changes
+# on screen: `pane.focused` would cost a process spawn per navigation keystroke
+# and tells us nothing new. Both of these fire at human frequency.
+
+# A pane acquires its identity here — and with it any pouch stashed for that
+# agent before this pane ever existed.
+[[events]]
+on = "pane.agent_detected"
+command = ["bash", "scripts/run.sh", "cli", "sync"]
+
+# The workspace label is part of the pouch key, so a rename silently re-keys
+# every pane in it.
+[[events]]
+on = "workspace.renamed"
+command = ["bash", "scripts/run.sh", "cli", "sync"]
+
+# The remaining three all change a tab's pane count, which is what decides
+# whether the mark belongs on the pane border or on the tab label. Without them
+# a tab that drops to a single pane keeps an unmarked label indefinitely.
+[[events]]
+on = "pane.created"
+command = ["bash", "scripts/run.sh", "cli", "sync"]
+
+[[events]]
+on = "pane.closed"
+command = ["bash", "scripts/run.sh", "cli", "sync"]
+
+[[events]]
+on = "pane.moved"
+command = ["bash", "scripts/run.sh", "cli", "sync"]
+
+# The operator renaming a tab wipes our mark off it. This also echoes our own
+# renameTab, which is harmless: the repaint it triggers finds the label already
+# correct and writes nothing, so it converges after one extra spawn.
+[[events]]
+on = "tab.renamed"
+command = ["bash", "scripts/run.sh", "cli", "sync"]
+
+# --- link handlers -----------------------------------------------------------
+# Makes `pouch://<key>` printed anywhere in a pane clickable (the URL scheme keeps
+# the short name — it is ours alone). The CLI prints one after every
+# `herdr-pouch add`, so stashing from a shell gives you a
+# click target straight back into the pouch it landed in.
+
+[[link_handlers]]
+id = "pouch-url"
+title = "Open pouch"
+pattern = "pouch://[A-Za-z0-9_:-]+"
+action = "open"
+
+[[actions]]
+id = "doctor"
+title = "Pouch: diagnostics"
+description = "Write resolved plugin paths and invocation context to the plugin log"
+contexts = ["global"]
+command = ["bash", "scripts/run.sh", "action", "doctor"]
