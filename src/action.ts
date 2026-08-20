@@ -11,6 +11,7 @@ import { BIN } from "./config.ts";
 import { resolveSelector, resolveTarget, addMessage, STATE_DIR } from "./store.ts";
 import { openStrip, closeStrip, openPopup, syncIndicator, insertFirst } from "./ops.ts";
 import { setup, keybindHealth } from "./setup.ts";
+import { update } from "./update.ts";
 
 interface Context {
   focused_pane_id?: string | null;
@@ -107,6 +108,20 @@ try {
         failed.length
           ? failed.map((step) => step.detail).join(" · ")
           : `Ready: \`${BIN}\` installed, prefix+shift+O opens the pouch`,
+      );
+      break;
+    }
+
+    case "update":
+    case "update-major": {
+      const steps = await update({ major: action === "update-major" });
+      for (const step of steps) console.log(`${step.ok ? "ok" : "FAILED"}  ${step.what}: ${step.detail}`);
+      const failed = steps.filter((step) => !step.ok);
+      // The whole point is that the operator never has to go read a log, so the
+      // outcome — success or not — goes into the notification.
+      await notify(
+        failed.length ? "Pouch update failed" : "Pouch",
+        failed.length ? failed.map((step) => step.detail).join(" · ") : steps.map((step) => step.detail).join(" · "),
       );
       break;
     }

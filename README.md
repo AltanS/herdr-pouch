@@ -57,6 +57,34 @@ The pane now wears a 👜, and `prefix+shift+O` opens the pouch. **Until a pouch
 Pouch shows nothing at all** — an empty pouch has no indicator, which is normal and not a sign the
 plugin failed to load. `herdr plugin list` confirms it is enabled.
 
+## Update
+
+```bash
+herdr plugin action invoke update --plugin herdr.pouch
+```
+
+or `herdr-pouch update` from a shell. One step: it advances the checkout and re-registers the plugin
+with Herdr. The re-link matters — Herdr caches the action set at link time, so a release that adds an
+action answers `plugin_action_not_found` until the plugin is linked again.
+
+It handles both install shapes. A `git clone` + `herdr plugin link` checkout fast-forwards its
+branch; a `herdr plugin install` checkout is detached and shallow, so it re-detaches onto the newest
+release tag instead. A Herdr-managed checkout is deliberately **never** re-linked — that would
+re-register it as `local`, after which Herdr refuses `herdr plugin install`, the only other way to
+repair it.
+
+A routine update stays inside the major it is on. Crossing one needs the separate consent:
+
+```bash
+herdr plugin action invoke update-major --plugin herdr.pouch    # or: herdr-pouch update --major
+```
+
+Installs older than 0.3.0 have no `update` action, so they take this one the long way:
+
+```bash
+cd <checkout> && git pull --ff-only && herdr plugin link "$PWD"
+```
+
 ## Use
 
 Stash from anywhere — a shell, a script, or one agent preparing work for another:
@@ -114,22 +142,29 @@ chord was left, so pick your own key or invoke the action by name:
 ```toml
 [[keys.command]]
 key = "prefix+shift+o"
-type = "shell"
-command = "herdr plugin action invoke open --plugin herdr.pouch"
+type = "plugin_action"
+command = "herdr.pouch.open"
 description = "Pouch: open"
 
 [[keys.command]]
 key = "prefix+shift+i"
-type = "shell"
-command = "herdr plugin action invoke insert-top --plugin herdr.pouch"
+type = "plugin_action"
+command = "herdr.pouch.insert-top"
 description = "Pouch: insert top"
 
 [[keys.command]]
 key = "prefix+shift+a"
-type = "shell"
-command = "herdr plugin action invoke compose --plugin herdr.pouch"
+type = "plugin_action"
+command = "herdr.pouch.compose"
 description = "Pouch: stash a message"
 ```
+
+**A remote client kills all three.** Herdr applies the *foreground* client's keybindings to the whole
+server, and a client attached with `herdr --remote` sends a profile that drops every
+`[[keys.command]]` entry — Herdr's own chords keep working, so it reads as a broken plugin. Copying
+the bindings to the connecting machine does not help; they are stripped there too. Attach with
+`herdr --remote <host> --remote-keybindings server`, or reach the actions from the action menu.
+`herdr plugin action invoke doctor --plugin herdr.pouch` says which case you are in.
 
 Each resolves the focused pane from the action's invocation context, so a binding always acts on
 whatever you are looking at. Inserting never removes a message unless `consumeOnInsert` says so —

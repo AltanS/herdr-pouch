@@ -1,6 +1,6 @@
 id = "herdr.pouch"
 name = "Pouch"
-version = "0.2.0"
+version = "0.3.0"
 min_herdr_version = "0.7.0"
 description = "Stash prompts for an agent ahead of time and insert them into its input with one click"
 platforms = ["linux", "macos"]
@@ -89,6 +89,28 @@ title = "Pouch: stash selected text"
 description = "Put the current terminal selection into the focused pane's pouch"
 contexts = ["selection"]
 command = ["bash", "scripts/run.sh", "action", "stash-selection"]
+
+# Link-mode plugins ARE their on-disk git checkout, and Herdr has no native
+# `plugin update`, so this action pulls and re-links in one step. Without it,
+# updating means a hand-typed sequence per machine — and forgetting the re-link
+# leaves Herdr on the action set it cached at link time. See src/update.ts.
+[[actions]]
+id = "update"
+title = "Pouch: update"
+description = "Advance this checkout to the newest release and re-register it with Herdr"
+contexts = ["global"]
+command = ["bash", "scripts/run.sh", "action", "update"]
+
+# The consent for a MAJOR upgrade. `update` stays inside the major this install
+# is on, so crossing one is a separate, deliberate invocation — and it must be
+# invokable from HERE, because a plugin action has no TTY to prompt on. The flag
+# IS the consent; there is no prompt behind it.
+[[actions]]
+id = "update-major"
+title = "Pouch: update across a major version"
+description = "Take the next major release, accepting that it needs a change from you"
+contexts = ["global"]
+command = ["bash", "scripts/run.sh", "action", "update-major"]
 
 [[actions]]
 id = "setup"

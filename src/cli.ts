@@ -27,6 +27,7 @@ import { readStdin, sleep } from "./runtime.ts";
 import { tryHerdr, sendText, listPanes, listTabs } from "./herdr.ts";
 import { openStrip, closeStrip, openPopup, syncIndicator, insertFirst, SUBMIT_SETTLE_MS } from "./ops.ts";
 import { setup, KEYBINDS } from "./setup.ts";
+import { update, wantsMajor } from "./update.ts";
 
 const USAGE = `${BIN} — stash messages for a Herdr agent and insert them later
 
@@ -45,6 +46,7 @@ usage:
   ${BIN} browse                     open the picker over every saved pouch
   ${BIN} sync                       repaint the pouch indicators
   ${BIN} setup [--no-keys]         link the plugin, install this CLI, add the keys
+  ${BIN} update [--major]          pull the newest release and re-link the plugin
   ${BIN} key [target]               print the resolved pouch identity
 
 target:
@@ -330,6 +332,16 @@ switch (cmd) {
     }
     console.log(`\n${style.dim}keys:${style.reset} ${KEYBINDS.map((b) => `${b.key} → ${b.description}`).join("  ·  ")}`);
     console.log(`${style.dim}next:${style.reset} stash something — \`${BIN} add "run the tests"\` — then press prefix+shift+O.`);
+    if (steps.some((s) => !s.ok)) process.exit(1);
+    break;
+  }
+
+  case "update": {
+    const steps = await update({ major: wantsMajor(argv) });
+    for (const step of steps) {
+      const mark = step.ok ? `${style.green}✓${style.reset}` : `${style.yellow}!${style.reset}`;
+      console.log(`${mark} ${style.bold}${step.what.padEnd(8)}${style.reset} ${step.detail}`);
+    }
     if (steps.some((s) => !s.ok)) process.exit(1);
     break;
   }

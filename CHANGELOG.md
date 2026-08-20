@@ -6,6 +6,20 @@ All notable changes to Pouch are recorded here. The format follows
 `version` in `herdr-plugin.toml` and `package.json` (enforced by `scripts/check-version.sh`).
 See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.3.0] - 2026-08-20
+
+### Added
+
+- **`update` action and `herdr-pouch update`** — advance the checkout and re-register it with Herdr
+  in one step. Herdr has no `plugin update`, and a forgotten `herdr plugin link` leaves it on the
+  action set it cached at link time.
+- Handles both checkout shapes: a linked clone fast-forwards its branch, a Herdr-managed checkout
+  re-detaches onto the newest release tag. A managed checkout is never re-linked — that would make
+  Herdr refuse `plugin install`, the only other way to repair it.
+- **`update-major` action and `update --major`** — a routine update stays inside the major it is on.
+  Crossing one is a separate, deliberate invocation, because a major means the operator must change
+  something.
+
 ## [0.2.0] - 2026-08-20
 
 ### Added
