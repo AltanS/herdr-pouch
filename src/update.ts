@@ -21,10 +21,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BIN } from "./config.ts";
-import { run } from "./runtime.ts";
+import { runSafe } from "./runtime.ts";
+import { herdrBin } from "./herdr.ts";
 import { PLUGIN_ID, pluginRoot, type Step } from "./setup.ts";
-
-const HERDR_BIN = process.env.HERDR_BIN_PATH || "herdr";
 
 /** The command that consents to a major crossing — printed wherever one is refused. */
 export const MAJOR_COMMAND = `herdr plugin action invoke update-major --plugin ${PLUGIN_ID}`;
@@ -161,7 +160,7 @@ export function majorVerdict(installed: string | null, fetched: string | null): 
   return b > a ? "crosses" : "same";
 }
 
-const git = (root: string, args: string[]) => run(["git"], ["-C", root, ...args]);
+const git = (root: string, args: string[]) => runSafe(["git"], ["-C", root, ...args]);
 
 /**
  * True when the checkout has no branch — exactly how `herdr plugin install`
@@ -275,9 +274,10 @@ export async function refreshRegistry(root: string): Promise<Step> {
   if (await isManagedCheckout(root)) {
     return { ok: true, what: "registry", detail: "Herdr-managed install — left alone (a re-link would block `herdr plugin install`)" };
   }
-  const { code } = await run([HERDR_BIN], ["plugin", "link", root]);
+  const bin = herdrBin();
+  const { code } = await runSafe([bin], ["plugin", "link", root]);
   if (code === 0) return { ok: true, what: "registry", detail: "re-linked — new actions are invokable now" };
-  return { ok: true, what: "registry", detail: `could not re-link (is the Herdr server running?) — run: herdr plugin link "${root}"` };
+  return { ok: true, what: "registry", detail: `could not re-link (is the Herdr server running, and is \`herdr\` reachable?) — run: herdr plugin link "${root}"` };
 }
 
 export interface UpdateOptions {

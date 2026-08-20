@@ -11,9 +11,10 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync,
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { BIN } from "./config.ts";
-import { run } from "./runtime.ts";
+import { runSafe } from "./runtime.ts";
+import { herdrBin } from "./herdr.ts";
 
-const HERDR_BIN = process.env.HERDR_BIN_PATH || "herdr";
+const HERDR_BIN = herdrBin();
 export const PLUGIN_ID = "herdr.pouch";
 
 /**
@@ -77,13 +78,13 @@ export interface Step {
 
 /** `herdr plugin list` prints text, not JSON — so match on the id. */
 async function isLinked(): Promise<boolean> {
-  const { stdout, code } = await run([HERDR_BIN], ["plugin", "list"]);
+  const { stdout, code } = await runSafe([HERDR_BIN], ["plugin", "list"]);
   return code === 0 && stdout.includes(PLUGIN_ID);
 }
 
 async function linkPlugin(root: string): Promise<Step> {
   if (await isLinked()) return { ok: true, what: "plugin", detail: `already linked (${PLUGIN_ID})` };
-  const { stderr, code } = await run([HERDR_BIN], ["plugin", "link", root]);
+  const { stderr, code } = await runSafe([HERDR_BIN], ["plugin", "link", root]);
   if (code !== 0) return { ok: false, what: "plugin", detail: `\`herdr plugin link ${root}\` failed: ${stderr.trim()}` };
   return { ok: true, what: "plugin", detail: `linked ${root}` };
 }
@@ -162,7 +163,7 @@ export async function installKeys(): Promise<Step> {
   mkdirSync(dirname(path), { recursive: true });
   const probe = join(dirname(path), ".pouch-config-check.toml");
   writeFileSync(probe, candidate);
-  const check = await run([HERDR_BIN], ["config", "check"], { HERDR_CONFIG_PATH: probe });
+  const check = await runSafe([HERDR_BIN], ["config", "check"], { HERDR_CONFIG_PATH: probe });
   rmSync(probe, { force: true });
   if (check.code !== 0) {
     return {
@@ -187,7 +188,7 @@ function escapeRe(s: string): string {
 }
 
 async function reload(): Promise<Step> {
-  const { stderr, code } = await run([HERDR_BIN], ["server", "reload-config"]);
+  const { stderr, code } = await runSafe([HERDR_BIN], ["server", "reload-config"]);
   if (code !== 0) return { ok: false, what: "reload", detail: `run \`herdr server reload-config\` yourself: ${stderr.trim()}` };
   return { ok: true, what: "reload", detail: "config reloaded — the keys work now" };
 }
@@ -263,7 +264,7 @@ export async function keybindHealth(): Promise<KeybindHealth> {
 /** An inbound remote client runs a bare `herdr remote-client-bridge` here. */
 async function remoteClientAttached(): Promise<boolean> {
   try {
-    const { stdout, code } = await run(["ps"], ["-eo", "args"]);
+    const { stdout, code } = await runSafe(["ps"], ["-eo", "args"]);
     if (code !== 0) return false;
     return stdout.split("\n").some((line) => /herdr\s+remote-client-bridge\b/.test(line));
   } catch {

@@ -3,9 +3,42 @@
  * `{"id":..,"result":{..}}` on stdout and a JSON error on stderr with exit 1.
  */
 
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { run } from "./runtime.ts";
 
-const BIN = process.env.HERDR_BIN_PATH || "herdr";
+/**
+ * Where to find the `herdr` CLI.
+ *
+ * Herdr injects `HERDR_BIN_PATH` into plugin commands, so a pane always knows.
+ * Nothing else does: a plain `ssh host 'herdr-pouch update'` gets a
+ * non-interactive shell whose PATH never sourced a profile, and spawning a bare
+ * `herdr` there dies with ENOENT. Same reason `scripts/run.sh` hunts for Bun
+ * rather than trusting PATH — check the usual install locations too.
+ */
+export function herdrBin(): string {
+  const explicit = process.env.HERDR_BIN_PATH;
+  if (explicit) return explicit;
+  const home = homedir();
+  // PATH first, so an operator's own build still wins; the well-known
+  // locations are the fallback, in `run.sh`'s order.
+  const dirs = [
+    ...(process.env.PATH ?? "").split(":").filter(Boolean),
+    join(home, ".local", "bin"),
+    "/usr/local/bin",
+    "/opt/homebrew/bin",
+  ];
+  for (const dir of dirs) {
+    const candidate = join(dir, "herdr");
+    if (existsSync(candidate)) return candidate;
+  }
+  // Not found on disk: fall back to the name and let PATH try. The caller
+  // reports the spawn failure; guessing a path here would only hide it.
+  return "herdr";
+}
+
+const BIN = herdrBin();
 
 export class HerdrError extends Error {
   // Declared and assigned separately rather than as constructor parameter

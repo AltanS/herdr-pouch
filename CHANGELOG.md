@@ -6,6 +6,17 @@ All notable changes to Pouch are recorded here. The format follows
 `version` in `herdr-plugin.toml` and `package.json` (enforced by `scripts/check-version.sh`).
 See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.3.1] - 2026-08-20
+
+### Fixed
+
+- `update` and `setup` no longer crash when `git` or `herdr` is missing from the environment they
+  run in. A spawn failure is an error event, not an exit code, so it aborted the step report with a
+  stack trace instead of naming the remedy.
+- `herdr` is now located the way `scripts/run.sh` locates Bun — PATH first, then the usual install
+  locations. A plain `ssh host 'herdr-pouch update'` gets a shell whose PATH never sourced a
+  profile, so a bare `herdr` was not found there.
+
 ## [0.3.0] - 2026-08-20
 
 ### Added

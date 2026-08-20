@@ -56,6 +56,23 @@ export function run(cmd: string[], args: string[], env?: Record<string, string>)
   });
 }
 
+/**
+ * `run` that reports a missing binary instead of rejecting.
+ *
+ * A spawn ENOENT arrives as an error EVENT, not an exit code, so `run` rejects
+ * — which aborts a caller mid-report with a stack trace. Callers that spawn
+ * something the operator may plausibly not have (`git`, or `herdr` from a
+ * non-interactive ssh shell whose PATH never sourced a profile) want the shell's
+ * own "not found" code instead.
+ */
+export async function runSafe(cmd: string[], args: string[], env?: Record<string, string>): Promise<RunResult> {
+  try {
+    return await run(cmd, args, env);
+  } catch (err) {
+    return { stdout: "", stderr: (err as Error).message, code: 127 };
+  }
+}
+
 /** Runs a command attached to this terminal — for handing control to $EDITOR. */
 export function runInteractive(cmd: string[]): Promise<number> {
   const [bin, ...rest] = cmd;
