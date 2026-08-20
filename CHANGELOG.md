@@ -6,6 +6,23 @@ All notable changes to Pouch are recorded here. The format follows
 `version` in `herdr-plugin.toml` and `package.json` (enforced by `scripts/check-version.sh`).
 See [`CLAUDE.md`](./CLAUDE.md) → *Versioning* for the bump policy.
 
+## [0.2.0] - 2026-08-20
+
+### Added
+
+- `doctor` now reports keybinding health: which chord holds each action, and a named remedy when a
+  key is bound but dead. The warning is the notification, not a line in the log.
+- `doctor` detects an attached remote client, which is the one case where every Pouch key stops
+  working while Herdr's own chords keep going.
+
+### Changed
+
+- `setup` now writes `type = "plugin_action"` bindings instead of `type = "shell"`. Herdr invokes
+  the action directly, so a key no longer depends on `herdr` being on `PATH`.
+- `setup` rewrites its own older block in place, so a re-run migrates `shell` bindings without
+  touching a chord you bound yourself. Bindings you hand-placed outside that block are reported,
+  never rewritten.
+
 ## [0.1.0] - 2026-08-19
 
 First release.

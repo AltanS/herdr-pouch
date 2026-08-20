@@ -42,14 +42,27 @@ export function pluginRoot(): string {
   return process.env.HERDR_PLUGIN_ROOT || join(dirname(new URL(import.meta.url).pathname), "..");
 }
 
+/**
+ * `plugin_action` hands the action id straight to Herdr. The older `shell` form
+ * spawned `herdr plugin action invoke …` detached, which fails silently when the
+ * key fires in an environment without `herdr` on PATH.
+ */
 function bindToml(bind: (typeof KEYBINDS)[number]): string {
   return [
     "[[keys.command]]",
     `key = "${bind.key}"`,
-    'type = "shell"',
-    `command = "herdr plugin action invoke ${bind.action} --plugin ${PLUGIN_ID}"`,
+    'type = "plugin_action"',
+    `command = "${PLUGIN_ID}.${bind.action}"`,
     `description = "${bind.description}"`,
   ].join("\n");
+}
+
+/** Matches either binding form, so an old block is recognised and replaced. */
+function bindsAction(toml: string, action: string): boolean {
+  return (
+    toml.includes(`"${PLUGIN_ID}.${action}"`) ||
+    toml.includes(`invoke ${action} --plugin ${PLUGIN_ID}`)
+  );
 }
 
 export function keysBlock(binds: typeof KEYBINDS): string {
@@ -112,26 +125,39 @@ function boundKeys(toml: string): Set<string> {
 export async function installKeys(): Promise<Step> {
   const path = configTomlPath();
   const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
-  const taken = boundKeys(existing);
 
-  const pending = KEYBINDS.filter((b) => !existing.includes(`invoke ${b.action} --plugin ${PLUGIN_ID}`));
+  // The managed block is dropped BEFORE deciding what is already bound. That is
+  // what lets a re-run rewrite our own older `shell` bindings into
+  // `plugin_action` ones, instead of seeing them and declaring the job done.
+  const stripped = existing.replace(new RegExp(`${escapeRe(BEGIN)}[\\s\\S]*?${escapeRe(END)}\\n?`, "g"), "");
+  const taken = boundKeys(stripped);
+
+  const pending = KEYBINDS.filter((b) => !bindsAction(stripped, b.action));
   const clashing = pending.filter((b) => taken.has(b.key));
   const toAdd = pending.filter((b) => !taken.has(b.key));
 
   // A clash is the operator's own binding winning, not a failure: say which
   // action stayed unbound and leave their config alone.
   if (!toAdd.length) {
-    const detail = clashing.length
-      ? `already present — ${clashing
-          .map((b) => `${b.key} is yours, so \`${b.action}\` stays unbound`)
-          .join("; ")}`
-      : "already present";
-    return { ok: true, what: "keys", detail };
+    // Bindings that reach our actions but sit outside the managed block are
+    // hand-placed. Rewriting them would edit lines the operator owns, so the
+    // old `shell` form is reported and left exactly where they put it.
+    const handPlaced = KEYBINDS.filter((b) => stripped.includes(`invoke ${b.action} --plugin ${PLUGIN_ID}`));
+    const notes = [
+      ...clashing.map((b) => `${b.key} is yours, so \`${b.action}\` stays unbound`),
+      ...(handPlaced.length
+        ? [
+            `${handPlaced.map((b) => b.key).join(", ")} use the old \`type = "shell"\` form outside Pouch's block — switch them to \`type = "plugin_action"\` with \`command = "${PLUGIN_ID}.<action>"\` yourself, or delete them and re-run`,
+          ]
+        : []),
+    ];
+    return { ok: true, what: "keys", detail: notes.length ? `already present — ${notes.join("; ")}` : "already present" };
   }
 
-  // Drop any earlier managed block so re-running never stacks duplicates.
-  const stripped = existing.replace(new RegExp(`${escapeRe(BEGIN)}[\\s\\S]*?${escapeRe(END)}\\n?`, "g"), "");
   const candidate = `${stripped.trimEnd()}\n\n${keysBlock(toAdd)}`;
+
+  // Nothing to write when the rewrite is byte-identical — no backup churn.
+  if (candidate === existing) return { ok: true, what: "keys", detail: "already present" };
 
   mkdirSync(dirname(path), { recursive: true });
   const probe = join(dirname(path), ".pouch-config-check.toml");
@@ -150,7 +176,10 @@ export async function installKeys(): Promise<Step> {
   writeFileSync(path, candidate);
   const added = toAdd.map((b) => b.key).join(", ");
   const skipped = clashing.length ? ` (skipped ${clashing.map((b) => b.key).join(", ")} — already bound)` : "";
-  return { ok: true, what: "keys", detail: `added ${added} to ${path}${skipped}` };
+  // Say "rewrote" when we replaced our own older block, so a re-run that appears
+  // to change nothing still explains itself.
+  const verb = existing.includes(BEGIN) ? "rewrote" : "added";
+  return { ok: true, what: "keys", detail: `${verb} ${added} in ${path}${skipped}` };
 }
 
 function escapeRe(s: string): string {
@@ -161,6 +190,85 @@ async function reload(): Promise<Step> {
   const { stderr, code } = await run([HERDR_BIN], ["server", "reload-config"]);
   if (code !== 0) return { ok: false, what: "reload", detail: `run \`herdr server reload-config\` yourself: ${stderr.trim()}` };
   return { ok: true, what: "reload", detail: "config reloaded — the keys work now" };
+}
+
+export interface KeyState {
+  key: string;
+  action: string;
+  /** `plugin_action` is current, `shell` is our pre-0.2.0 form, `operator` is theirs. */
+  form: "plugin_action" | "shell" | "operator" | "absent";
+}
+
+export interface KeybindHealth {
+  keys: KeyState[];
+  /** Non-null when something needs the operator; the string names the remedy. */
+  warning: string | null;
+}
+
+/**
+ * Why a bound Pouch key can still do nothing.
+ *
+ * Herdr applies the FOREGROUND client's keybindings to the whole server, and a
+ * client attached with `herdr --remote` sends a profile built by
+ * `local_profile()`, which copies the built-in actions and drops every
+ * `[[keys.command]]` entry. So built-in chords keep working while all three
+ * Pouch keys go dead, which reads exactly like a broken plugin. Copying the
+ * bindings to the connecting machine does not help — they are stripped there
+ * too. Only `--remote-keybindings server` avoids it.
+ *
+ * There is no API that reports the foreground client's mode, so the attached
+ * remote client is detected by its bridge process. A miss costs a missing hint,
+ * never a wrong action.
+ */
+export async function keybindHealth(): Promise<KeybindHealth> {
+  const path = configTomlPath();
+  const toml = existsSync(path) ? readFileSync(path, "utf8") : "";
+  const taken = boundKeys(toml);
+
+  const keys: KeyState[] = KEYBINDS.map((bind) => {
+    const form = toml.includes(`"${PLUGIN_ID}.${bind.action}"`)
+      ? "plugin_action"
+      : toml.includes(`invoke ${bind.action} --plugin ${PLUGIN_ID}`)
+        ? "shell"
+        : taken.has(bind.key)
+          ? "operator"
+          : "absent";
+    return { key: bind.key, action: bind.action, form };
+  });
+
+  const missing = keys.filter((k) => k.form === "absent");
+  if (missing.length) {
+    return {
+      keys,
+      warning: `${missing.map((k) => k.key).join(", ")} not bound — run \`${BIN} setup\``,
+    };
+  }
+
+  if (await remoteClientAttached()) {
+    return {
+      keys,
+      warning:
+        "a remote client is attached, and Herdr strips every [[keys.command]] binding from a remote client's profile — reattach with `herdr --remote <host> --remote-keybindings server`, or use the action menu",
+    };
+  }
+
+  const stale = keys.filter((k) => k.form === "shell");
+  if (stale.length) {
+    return { keys, warning: `${stale.map((k) => k.key).join(", ")} still use the old shell form — run \`${BIN} setup\`` };
+  }
+
+  return { keys, warning: null };
+}
+
+/** An inbound remote client runs a bare `herdr remote-client-bridge` here. */
+async function remoteClientAttached(): Promise<boolean> {
+  try {
+    const { stdout, code } = await run(["ps"], ["-eo", "args"]);
+    if (code !== 0) return false;
+    return stdout.split("\n").some((line) => /herdr\s+remote-client-bridge\b/.test(line));
+  } catch {
+    return false;
+  }
 }
 
 export interface SetupOptions {

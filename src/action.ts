@@ -10,7 +10,7 @@ import { notify } from "./herdr.ts";
 import { BIN } from "./config.ts";
 import { resolveSelector, resolveTarget, addMessage, STATE_DIR } from "./store.ts";
 import { openStrip, closeStrip, openPopup, syncIndicator, insertFirst } from "./ops.ts";
-import { setup } from "./setup.ts";
+import { setup, keybindHealth } from "./setup.ts";
 
 interface Context {
   focused_pane_id?: string | null;
@@ -112,6 +112,7 @@ try {
     }
 
     case "doctor": {
+      const health = await keybindHealth();
       // Printed to `herdr plugin log list --plugin herdr.pouch`.
       console.log(
         JSON.stringify(
@@ -121,13 +122,16 @@ try {
             stateDir: process.env.HERDR_PLUGIN_STATE_DIR,
             socket: process.env.HERDR_SOCKET_PATH,
             resolvedStateDir: STATE_DIR,
+            keybinds: health,
             context,
           },
           null,
           2,
         ),
       );
-      await notify("Pouch", "Wrote diagnostics to the plugin log");
+      // A dead key is the one fault an operator cannot see in the log they were
+      // told to read, so it is the notification rather than a line inside it.
+      await notify("Pouch", health.warning ?? "Diagnostics in the plugin log — keybindings look healthy");
       break;
     }
 

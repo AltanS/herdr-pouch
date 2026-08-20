@@ -1,6 +1,6 @@
 {
   "name": "herdr-pouch",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "private": true,
   "description": "Herdr plugin: stash prompts for an agent and insert them with one click",
